@@ -10,3 +10,9 @@ Build/*
 *.pidb
 *.userprefs
 *.meta
+/unity/Library
+/unity/obj
+/unity/*.csproj
+/unity/*.sln
+/unity/*.DotSettings
+/unity/*.suo

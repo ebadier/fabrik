@@ -1,9 +1,24 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
-public class Fabrik : MonoBehaviour {
-		
+[System.Serializable]
+public class IKEffector
+{
+	/// <summary>
+	/// IK Chain End.
+	/// </summary>
+	public Transform EndEffector;
+
+	/// <summary>
+	/// The target constraining the EndEffector.
+	/// </summary>
+	public Transform IKTarget;
+}
+
+public class Fabrik : MonoBehaviour 
+{		
 	/*Constant object maintaining the relation between joints of a skeleton
 	 * iterating through the transforms in a depth-first order.
 	 * */
@@ -17,12 +32,12 @@ public class Fabrik : MonoBehaviour {
 		public readonly JointInfo[] children_;
 		public readonly JointInfo[] effectors_; // effectors associated with the chain starting at "this"
 		
-		public JointInfo(Transform joint, ref int id) : this(joint, ref id, null, null)
+		public JointInfo(Transform joint, ref int id, ref IKEffector[] definedEffectors) : this(joint, ref id, ref definedEffectors, null, null)
 		{
 			// NOTHING	
 		}
 					
-		private JointInfo(Transform joint, ref int id, JointInfo parent, JointInfo fork)
+		private JointInfo(Transform joint, ref int id, ref IKEffector[] definedEffectors, JointInfo parent, JointInfo fork)
 		{
 			id_ = id;
 			fork_ = fork;
@@ -38,14 +53,15 @@ public class Fabrik : MonoBehaviour {
 				distanceToRoot_ = parent.distanceToRoot_ + distanceToParent_;
 			}
 			int nbChildren = joint.childCount;
-			children_ = new JointInfo[nbChildren];
-			if(nbChildren == 0) // joint is effector
+			if(nbChildren == 0 || (definedEffectors.Count(ef => ef.EndEffector == joint) > 0) ) // joint is effector
 			{
+				children_ = new JointInfo[0];
 				effectors_ = new JointInfo[1];
 				effectors_[0] = this;
 			}
 			else
 			{
+				children_ = new JointInfo[nbChildren];
 				int nbEffectors_ = 0;
 				JointInfo childFork = fork_;
 				if(nbChildren > 1)
@@ -56,7 +72,7 @@ public class Fabrik : MonoBehaviour {
 				{
 					// id is updated with a depth-first iteration
 					++id;
-					JointInfo jInfo = new JointInfo(joint.GetChild(i), ref id, this, childFork);
+					JointInfo jInfo = new JointInfo(joint.GetChild(i), ref id, ref definedEffectors, this, childFork);
 					children_[i] = jInfo;
 					nbEffectors_ += jInfo.effectors_.Length;
 				}
@@ -71,6 +87,7 @@ public class Fabrik : MonoBehaviour {
 				}
 			}
 		}
+
 		public bool Equals(JointInfo jInfo)
 	    {
 	        return jInfo != null && id_ == jInfo.id_;
@@ -78,8 +95,9 @@ public class Fabrik : MonoBehaviour {
 	}
 	
 	// exposed attributes
-	public Transform ikChain; // kinematic chain on which Ik will be performed
-	public Transform[] targets; // ordered list of targets
+	public Transform IKChainRoot; // kinematic chain's root on which IK will be performed
+	public IKEffector[] DefinedEffectors;
+	//public Transform[] targets; // ordered list of targets
 	/*public float treshold;*/ 
 	// End exposed attributes
 	
@@ -89,17 +107,22 @@ public class Fabrik : MonoBehaviour {
 	void Start()
 	{
 		int id = 0;
-		jointInfo_ = new JointInfo(ikChain, ref id);
+		jointInfo_ = new JointInfo(IKChainRoot, ref id, ref DefinedEffectors);
 		transforms_ = new Transform[id+1];
 		id = 0;
-		InitTransform(ikChain, ref id);
+		InitTransform(IKChainRoot, ref id);
 	}
 	
 	// indexes transforms of interest
 	private void InitTransform(Transform transform, ref int id)
 	{
 		transforms_[id] = transform;
-		for(int i=0; i < transform.GetChildCount(); ++i)
+		if (DefinedEffectors.Count(ef => ef.EndEffector == transform) > 0)
+		{
+			return;
+		}
+
+		for (int i = 0; i < transform.childCount; ++i)
 		{
 			++id;
 			InitTransform(transform.GetChild(i), ref id);
@@ -108,14 +131,14 @@ public class Fabrik : MonoBehaviour {
 	
 	void Update()
 	{
-		Vector3 rootPos = ikChain.position;
-		Vector3[] positionTargets = new Vector3[targets.Length];
-		for(int i = 0; i < targets.Length; ++i)
+		Vector3 rootPos = IKChainRoot.position;
+		Vector3[] positionTargets = new Vector3[DefinedEffectors.Length];
+		for(int i = 0; i < DefinedEffectors.Length; ++i)
 		{
-			positionTargets[i] = targets[i].position;
+			positionTargets[i] = DefinedEffectors[i].IKTarget.position;
 		}
 		ForwardStep(jointInfo_.effectors_, positionTargets);
-		ikChain.position = rootPos;
+		IKChainRoot.position = rootPos;
 		BackwardStep(jointInfo_);
 	}
 	
@@ -204,7 +227,7 @@ public class Fabrik : MonoBehaviour {
 		}
 		else
 		{
-			return ikChain.position;
+			return IKChainRoot.position;
 		}
 	}
 	
